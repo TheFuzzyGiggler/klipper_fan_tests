@@ -39,7 +39,7 @@ case "$ACTION" in
                 cp -f "${KLIPPER_PATH}/klippy/extras/${file}" "${KLIPPER_PATH}/klippy/extras/${file}.bak"
             fi
             echo "Linking ${file} to Klipper directory..."
-            ln -sf "${SRCDIR}/${file}" "${KLIPPER_PATH}/klippy/extras/${file}"
+            cp -f "${SRCDIR}/${file}" "${KLIPPER_PATH}/klippy/extras/${file}"
         done
         echo "Restarting Klipper..."
         sudo systemctl restart klipper
