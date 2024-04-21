@@ -10,7 +10,7 @@ set -e
 
 # Define paths
 KLIPPER_PATH="${HOME}/klipper"
-SRCDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )"/ && pwd )"
+SRCDIR=$(dirname "$(realpath "$0")")
 
 # Define files to be managed
 files_to_manage="fan.py fan_generic.py temperature_fan.py"
