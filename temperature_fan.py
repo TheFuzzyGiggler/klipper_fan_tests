@@ -29,7 +29,7 @@ class TemperatureFan:
         ########## Temp Settings ##########
         self.min_temp = config.getfloat('min_temp', minval=KELVIN_TO_CELSIUS)
         if self.min_temp > AMBIENT_TEMP * .9:
-            tempwarning = f"!!!Warning: Minimum temp of {self.min_temp: .3f} "
+            tempwarning = f"!! Warning: Minimum temp of {self.min_temp: .3f} "
             tempwarning += " is close to or above room temperature. \n"
             tempwarning += "ADC Shutdown likely!"
             self.printer.lookup_object('gcode').respond_raw(tempwarning)
