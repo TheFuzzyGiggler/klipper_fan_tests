@@ -13,7 +13,7 @@ KLIPPER_PATH="${HOME}/klipper"
 SRCDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )"/ && pwd )"
 
 # Define files to be managed
-files_to_manage=("fan.py" "fan_generic.py" "temperature_fan.py")
+files_to_manage="fan.py fan_generic.py temperature_fan.py"
 
 # Check if running as root
 if [ "$(id -u)" -eq 0 ]; then
@@ -33,7 +33,7 @@ ACTION="${1:-install}"
 case "$ACTION" in
     install)
         echo "Installing..."
-        for file in "${files_to_manage[@]}"; do
+        for file in $files_to_manage; do
             if [ -f "${KLIPPER_PATH}/klippy/extras/${file}" ]; then
                 echo "Backing up existing ${file} to ${file}.bak..."
                 cp -f "${KLIPPER_PATH}/klippy/extras/${file}" "${KLIPPER_PATH}/klippy/extras/${file}.bak"
@@ -46,7 +46,7 @@ case "$ACTION" in
         ;;
     uninstall)
         echo "Uninstalling..."
-        for file in "${files_to_manage[@]}"; do
+        for file in $files_to_manage; do
             if [ -f "${KLIPPER_PATH}/klippy/extras/${file}.bak" ]; then
                 echo "Restoring original ${file} from backup..."
                 mv -f "${KLIPPER_PATH}/klippy/extras/${file}.bak" "${KLIPPER_PATH}/klippy/extras/${file}"
