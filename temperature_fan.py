@@ -57,9 +57,6 @@ class TemperatureFan:
         ###################################
 
         ########## Speed Control ##########
-        algos = {'watermark': ControlBangBang, 'pid': ControlPID, 'slope': ControlSlope}
-        algo = config.getchoice('control', algos)
-        self.control = algo(self, config)
         self.next_speed_time = 0.
         self.last_speed_value = 0.
         self.speed_delay = self.sensor.get_report_time_delta()
@@ -67,8 +64,11 @@ class TemperatureFan:
             'max_speed', 1., above=0., maxval=1.)
         self.max_speed = self.max_speed_conf
         self.min_speed_conf = config.getfloat(
-            'min_speed', 0.3, minval=0., maxval=1.)
+            'min_speed', 0., minval=0., maxval=1.)
         self.min_speed = self.min_speed_conf
+        algos = {'watermark': ControlBangBang, 'pid': ControlPID, 'slope': ControlSlope}
+        algo = config.getchoice('control', algos)
+        self.control = algo(self, config)
         ###################################
 
         self.slicer_fan_num = config.getint('slicer_fan_number', default=None)
@@ -80,10 +80,10 @@ class TemperatureFan:
             self.cmd_SET_TEMPERATURE_FAN_TARGET,
             desc=self.cmd_SET_TEMPERATURE_FAN_TARGET_help)
 
-    def set_speed(self, read_time, value):
+    def set_speed(self, read_time, value, cut_off=False):
         if value <= 0.:
             value = 0.
-        elif value < self.min_speed:
+        elif value < self.min_speed and cut_off==False:
             value = self.min_speed
         if self.target_temp <= 0.:
             value = 0.
@@ -156,21 +156,24 @@ class ControlBangBang:
         self.max_delta = config.getfloat('max_delta', 2.0, above=0.)
         self.heating = False
     def temperature_callback(self, read_time, temp):
-        if temp < self.temperature_fan.min_temp_cutoff:
-            self.temperature_fan.set_speed(read_time,0)
+        if temp < self.temperature_fan.min_temp_cutoff * .005:
+            # Temperature is significantly below the cutoff, turn off the fan
+            self.temperature_fan.set_speed(read_time, 0, True)
             return
-        current_temp, target_temp = self.temperature_fan.get_temp(read_time)
-        if (self.heating
-            and temp >= target_temp+self.max_delta):
-            self.heating = False
-        elif (not self.heating
-              and temp <= target_temp-self.max_delta):
-            self.heating = True
-        if self.heating:
-            self.temperature_fan.set_speed(read_time, 0.)
-        else:
-            self.temperature_fan.set_speed(read_time,
-                                           self.temperature_fan.get_max_speed())
+        elif temp > self.temperature_fan.min_temp_cutoff + self.temperature_fan.min_temp_cutoff * .005:
+            # Temperature is above the hysteresis high threshold, proceed with normal processing
+            current_temp, target_temp = self.temperature_fan.get_temp(read_time)
+            if (self.heating
+                and temp >= target_temp+self.max_delta):
+                self.heating = False
+            elif (not self.heating
+                  and temp <= target_temp-self.max_delta):
+                self.heating = True
+            if self.heating:
+                self.temperature_fan.set_speed(read_time, 0.)
+            else:
+                self.temperature_fan.set_speed(read_time,
+                                               self.temperature_fan.get_max_speed())
 
 ######################################################################
 # Proportional Integral Derivative (PID) control algo
@@ -194,34 +197,37 @@ class ControlPID:
         self.prev_temp_deriv = 0.
         self.prev_temp_integ = 0.
     def temperature_callback(self, read_time, temp):
-        if temp < self.temperature_fan.min_temp_cutoff:
-            self.temperature_fan.set_speed(read_time,0)
+        if temp < self.temperature_fan.min_temp_cutoff * .005:
+            # Temperature is significantly below the cutoff, turn off the fan
+            self.temperature_fan.set_speed(read_time, 0, True)
             return
-        current_temp, target_temp = self.temperature_fan.get_temp(read_time)
-        time_diff = read_time - self.prev_temp_time
-        # Calculate change of temperature
-        temp_diff = temp - self.prev_temp
-        if time_diff >= self.min_deriv_time:
-            temp_deriv = temp_diff / time_diff
-        else:
-            temp_deriv = (self.prev_temp_deriv * (self.min_deriv_time-time_diff)
-                          + temp_diff) / self.min_deriv_time
-        # Calculate accumulated temperature "error"
-        temp_err = target_temp - temp
-        temp_integ = self.prev_temp_integ + temp_err * time_diff
-        temp_integ = max(0., min(self.temp_integ_max, temp_integ))
-        # Calculate output
-        co = self.Kp*temp_err + self.Ki*temp_integ - self.Kd*temp_deriv
-        bounded_co = max(0., min(self.temperature_fan.get_max_speed(), co))
-        self.temperature_fan.set_speed(
-            read_time, max(self.temperature_fan.get_min_speed(),
-                           self.temperature_fan.get_max_speed() - bounded_co))
-        # Store state for next measurement
-        self.prev_temp = temp
-        self.prev_temp_time = read_time
-        self.prev_temp_deriv = temp_deriv
-        if co == bounded_co:
-            self.prev_temp_integ = temp_integ
+        elif temp > self.temperature_fan.min_temp_cutoff + self.temperature_fan.min_temp_cutoff * .005:
+            # Temperature is above the hysteresis high threshold, proceed with normal processing
+            current_temp, target_temp = self.temperature_fan.get_temp(read_time)
+            time_diff = read_time - self.prev_temp_time
+            # Calculate change of temperature
+            temp_diff = temp - self.prev_temp
+            if time_diff >= self.min_deriv_time:
+                temp_deriv = temp_diff / time_diff
+            else:
+                temp_deriv = (self.prev_temp_deriv * (self.min_deriv_time-time_diff)
+                              + temp_diff) / self.min_deriv_time
+            # Calculate accumulated temperature "error"
+            temp_err = target_temp - temp
+            temp_integ = self.prev_temp_integ + temp_err * time_diff
+            temp_integ = max(0., min(self.temp_integ_max, temp_integ))
+            # Calculate output
+            co = self.Kp*temp_err + self.Ki*temp_integ - self.Kd*temp_deriv
+            bounded_co = max(0., min(self.temperature_fan.get_max_speed(), co))
+            self.temperature_fan.set_speed(
+                read_time, max(self.temperature_fan.get_min_speed(),
+                               self.temperature_fan.get_max_speed() - bounded_co))
+            # Store state for next measurement
+            self.prev_temp = temp
+            self.prev_temp_time = read_time
+            self.prev_temp_deriv = temp_deriv
+            if co == bounded_co:
+                self.prev_temp_integ = temp_integ
 
 
 ######################################################################
@@ -231,7 +237,6 @@ class ControlPID:
 class ControlSlope:
     def __init__(self, temperature_fan, config):
         self.temperature_fan = temperature_fan
-        self.hysteresis_margin = 0.5
         self.min_speed = self.temperature_fan.min_speed
         self.min_temp_cutoff = self.temperature_fan.min_temp_cutoff
         self.min_temp = self.temperature_fan.min_temp
@@ -249,11 +254,11 @@ class ControlSlope:
                 self.min_temp = AMBIENT_TEMP
 
     def temperature_callback(self, read_time, temp):
-        if temp < self.temperature_fan.min_temp_cutoff - self.hysteresis_margin:
+        if temp < self.temperature_fan.min_temp_cutoff * .005:
             # Temperature is significantly below the cutoff, turn off the fan
-            self.temperature_fan.set_speed(read_time, 0)
+            self.temperature_fan.set_speed(read_time, 0, True)
             return
-        elif temp > self.temperature_fan.min_temp_cutoff + self.hysteresis_margin:
+        elif temp > self.temperature_fan.min_temp_cutoff + self.temperature_fan.min_temp_cutoff * .005:
             # Temperature is above the hysteresis high threshold, proceed with normal processing
             temp = max(self.min_temp, min(temp, self.max_temp))
             self.temperature_fan.target_temp = math.trunc(temp * 10) / 10
